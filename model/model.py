@@ -1,7 +1,5 @@
 import torch
 from torch import nn
-from torchsummary import summary
-from torchstat import stat
 import torch.nn.functional as F
 
 
@@ -36,94 +34,40 @@ class LaplacianLayer(nn.Module):
         return y
 
 
-# class Model(nn.Module):
-#     def __init__(self):
-#         super(Model, self).__init__()
-#         self.model = nn.Sequential(
-#             AddLaplacian(),
-#
-#             nn.Conv2d(in_channels=4, out_channels=16, kernel_size=3, stride=2, padding=1),
-#             nn.BatchNorm2d(16), nn.ReLU(),
-#             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-#
-#             nn.Conv2d(in_channels=16, out_channels=64, kernel_size=3, stride=2, padding=1),
-#             nn.BatchNorm2d(64), nn.ReLU(),
-#             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-#
-#             nn.Conv2d(in_channels=64, out_channels=256, kernel_size=3, stride=2, padding=1),
-#             nn.BatchNorm2d(256), nn.ReLU(),
-#             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-#
-#             nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3, stride=2, padding=1),
-#             nn.BatchNorm2d(512), nn.ReLU(),
-#             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-#
-#             nn.AdaptiveAvgPool2d(1),
-#             nn.Flatten(),
-#             nn.Linear(512, 2)
-#         )
-#
-#     def forward(self, x):
-#         return self.model(x)
-#
-#
-# class ModelText(nn.Module):
-#     def __init__(self):
-#         super(ModelText, self).__init__()
-#         self.model = nn.Sequential(
-#             nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, stride=2, padding=1),
-#             nn.BatchNorm2d(16), nn.ReLU(),
-#             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-#
-#             nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=2, padding=1),
-#             nn.BatchNorm2d(32), nn.ReLU(),
-#             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-#
-#             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2, padding=1),
-#             nn.BatchNorm2d(64), nn.ReLU(),
-#             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-#
-#             nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1),
-#             nn.BatchNorm2d(128), nn.ReLU(),
-#             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-#
-#             nn.AdaptiveAvgPool2d(1),
-#             nn.Flatten(),
-#             nn.Linear(128, 2)
-#         )
-#
-#     def forward(self, x):
-#         return self.model(x)
-#
-#
-# class ModelText2(nn.Module):
-#     def __init__(self):
-#         super(ModelText2, self).__init__()
-#         self.model = nn.Sequential(
-#             LaplacianLayer(),
-#             nn.Conv2d(in_channels=1, out_channels=16, kernel_size=3, stride=2, padding=1),
-#             nn.BatchNorm2d(16), nn.ReLU(),
-#             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-#
-#             nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=2, padding=1),
-#             nn.BatchNorm2d(32), nn.ReLU(),
-#             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-#
-#             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2, padding=1),
-#             nn.BatchNorm2d(64), nn.ReLU(),
-#             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-#
-#             nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1),
-#             nn.BatchNorm2d(128), nn.ReLU(),
-#             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-#
-#             nn.AdaptiveAvgPool2d(1),
-#             nn.Flatten(),
-#             nn.Linear(128, 2)
-#         )
-#
-#     def forward(self, x):
-#         return self.model(x)
+class ResidualBlock(nn.Module):
+    def __init__(self, input_channels, num_channels, strides=1, use_1x1conv=False):
+        super(ResidualBlock, self).__init__()
+
+        self.conv1 = nn.Conv2d(input_channels, num_channels,
+                               kernel_size=3, padding=1, stride=strides)
+        self.conv2 = nn.Conv2d(num_channels, num_channels,
+                               kernel_size=3, padding=1)
+        if use_1x1conv:
+            self.conv3 = nn.Conv2d(input_channels, num_channels,
+                                   kernel_size=1, stride=strides)
+        else:
+            self.conv3 = None
+        self.bn1 = nn.BatchNorm2d(num_channels)
+        self.bn2 = nn.BatchNorm2d(num_channels)
+
+    def forward(self, X):
+        Y = F.relu(self.bn1(self.conv1(X)))
+        Y = self.bn2(self.conv2(Y))
+        if self.conv3:
+            X = self.conv3(X)
+        Y += X
+        return F.relu(Y)
+
+
+class ResidualBlocks(nn.Module):
+    def __init__(self, num_blocks, num_channels):
+        super(ResidualBlocks, self).__init__()
+        self.blocks = nn.Sequential()
+        for i in range(num_blocks):
+            self.blocks.add_module("ResidualBlock%d" % (i+1), ResidualBlock(num_channels, num_channels))
+
+    def forward(self, x):
+        return self.blocks(x)
 
 
 class Model(nn.Module):
@@ -140,22 +84,31 @@ class Model(nn.Module):
             nn.BatchNorm2d(16), nn.ReLU(),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
         )
-        self.mix_layer = nn.Sequential(
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(64), nn.ReLU(),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-
-            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(128), nn.ReLU(),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-        )
+        # self.mix_layer = nn.Sequential(
+        #     nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=2, padding=1),
+        #     nn.BatchNorm2d(64), nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+        #
+        #     nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1),
+        #     nn.BatchNorm2d(128), nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+        # )
+        # self.output_layer = nn.Sequential(
+        #     nn.AdaptiveAvgPool2d(1),
+        #     nn.Flatten(),
+        #     nn.Linear(128, 56),
+        #     nn.BatchNorm1d(56),
+        #     nn.ReLU(),
+        #     nn.Linear(56, 2)
+        # )
+        self.mix_layer = ResidualBlocks(num_blocks=3, num_channels=32)
         self.output_layer = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
-            nn.Linear(128, 56),
-            nn.BatchNorm1d(56),
+            nn.Linear(32, 16),
+            nn.BatchNorm1d(16),
             nn.ReLU(),
-            nn.Linear(56, 2)
+            nn.Linear(16, 2)
         )
 
     def forward(self, x):
@@ -170,6 +123,8 @@ class Model(nn.Module):
 
 
 if __name__ == '__main__':
+    from torchsummary import summary
+    from torchstat import stat
     # model = ModelText()
     #
     # model = model.to(torch.device('cuda'))
@@ -198,4 +153,8 @@ if __name__ == '__main__':
     # stat(model, input_size=(3, 448, 448))
     model = model.to(torch.device('cuda'))
     summary(model, input_size=(3, 448, 448))
-
+    # block = ResidualBlocks(num_blocks=6, num_channels=60)
+    # x = torch.randn((1, 60, 66, 66))
+    # y = block(x)
+    # print(y.shape)
+    # print(block)
