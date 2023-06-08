@@ -17,6 +17,7 @@ batch_size = 32
 lr = 0.001
 num_epochs = 1
 num_workers = 0
+my_model = model.Model()
 
 
 def get_save_dir():
@@ -186,7 +187,6 @@ if __name__ == '__main__':
     #     transforms=valid_transforms)
 
     # 定义模型
-    my_model = model.Model()
     # 设置训练参数
 
     opt = optim.Adam(my_model.parameters(), lr=lr)

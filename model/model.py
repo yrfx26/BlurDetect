@@ -114,6 +114,52 @@ class Model(nn.Module):
     def forward(self, x):
         y_laplacian = self.laplacian_block(x)
         y_rgb = self.rgb_block(x)
+
+        x_mix = torch.cat([y_laplacian, y_rgb], dim=1)
+        y_mix = self.mix_layer(x_mix)
+        output = self.output_layer(y_mix)
+
+        return output
+
+
+class BigModel(nn.Module):
+    def __init__(self):
+        super(BigModel, self).__init__()
+        self.rgb_block = nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(32), nn.ReLU(),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+            ResidualBlocks(3, 32)
+        )
+        self.laplacian_block = nn.Sequential(
+            LaplacianLayer(),
+            nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(32), nn.ReLU(),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+            ResidualBlocks(3, 32)
+        )
+        self.mix_layer = nn.Sequential(
+            ResidualBlocks(3, 64),
+            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(128), nn.ReLU(),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+            ResidualBlocks(num_blocks=3, num_channels=128),
+            nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(256), nn.ReLU(),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+        )
+        self.output_layer = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(256, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.Linear(64, 2)
+        )
+
+    def forward(self, x):
+        y_laplacian = self.laplacian_block(x)
+        y_rgb = self.rgb_block(x)
         #
         x_mix = torch.cat([y_laplacian, y_rgb], dim=1)
         y_mix = self.mix_layer(x_mix)
@@ -149,7 +195,7 @@ if __name__ == '__main__':
     # summary(model, input_size=(3, 448, 448))
 
     # ModelText3
-    model = Model()
+    model = BigModel()
     # stat(model, input_size=(3, 448, 448))
     model = model.to(torch.device('cuda'))
     summary(model, input_size=(3, 448, 448))
